@@ -115,6 +115,55 @@ dsh plugin --profile web install ./dsh-groupchat
 - **可以在设置页里正常禁用 / 启用**：webserver 的路由表是服务级的、禁用时不会自动注销，所以插件自己接住了 `register` 返回的 disposer——同进程内重新启用时会先回收上一份残留路由再注册（没接住之前，禁用→启用会报 `duplicate exact route "/groupchat"`）。
 - 在 DSH 0.2.0-rc.2（官方桌面端）上开发与测试。
 
+
+## 本 fork 的改动（`0.6.6-fy.x`）
+
+上游 0.6.5 的机制是「每条消息各注入一条 10 字预览」。这个 fork 在**不动提示词、不加制度**的前提下只改机制，目标是把「忙时攒、闲时合并、能不能被叫醒」变成宿主侧确定性行为。
+
+### 1. 合并窗口（coalescing）
+
+同一成员在一段窗口内收到的消息合并成**一条**注入载荷，而不是一条消息一次注入。
+
+| 参数 | 值 | 含义 |
+|---|---|---|
+| `BATCH_WINDOW_MS` | 3000 | 静默窗口 |
+| `BATCH_MAX` | 8 | 批上限，满即 flush |
+| `BATCH_HARD_MS` | 120000 | 防饿死强制 flush |
+| `BATCH_PREVIEW_MAX` | 3 | 载荷里最多带几条预览，其余只计数 |
+| `BATCH_LINE_CAP` | 40 | 单条预览字数 |
+
+载荷形态（5 条消息实测）：
+
+```
+[群聊 · workspace] 5 条新消息：
+用户: 压测消息 1：...
+用户: 压测消息 2：...
+用户: 压测消息 3：...
+…还有 2 条
+（群聊是**避免撞车的通报板，不是协作**...）
+（看完整内容调 groupchat_read。）
+```
+
+flush 时机取先到者：静默窗口、`turn/end`（成员这一轮结束时）、批上限、强制 deadline。那段固定的 `GROUP_PURPOSE` 现在**每个会话只带一次**（原先每条消息都重复）。
+
+### 2. 投递台账（delivery ledger）
+
+`messageId → sessionId → state`，状态机 `queued → notified → read → replied`（或 `stale`）。`read` 在成员调用 `groupchat_read` 时标记，`replied` 在 `groupchat_post` 时标记——**agent 不需要输出任何额外内容**。`GET /groupchat` 的每个群多出 `deliveries` 汇总，最近 20 条消息带逐成员 `delivery` 行，用来回答「是没收到，还是读了不回」。
+
+### 3. 离线未读累计
+
+成员没有驱动时收到的消息只计数（`unreadWhileAway`），被唤醒时给一条「你不在的时候群里还有 N 条消息」，而不是逐条补投。
+
+### 4. 唤醒条件修正（0.2.1 实测发现的真问题）
+
+上游只在成员**没有驱动**时才 `followup` 唤醒；但空闲会话仍然有驱动，于是「人 @ 一个 idle 成员」会被当成「已在线」跳过，消息只被 `inject` 静默塞进 inbox，**永远不会有回合去处理它**。现在按 `agent.status === 'running'` 判断：运行中走 `inject`（下个 step 边界批量领取），空闲走 `followup`（真的起一轮）。
+
+### 实测（容器测试台，dsh 0.2.1-rc.2）
+
+- 5 条消息 → 1 条合并载荷（会话日志里 `条新消息` 只出现一次，`…还有 2 条` 正确）；
+- `@` 唤醒 idle 成员 → 它调 `groupchat_read` 再 `groupchat_post`，台账从 `queued` 走到 `replied`；
+- 空闲 3 条 → `unreadWhileAway: 3` → 唤醒载荷带「你不在的时候群里还有 3 条消息」。
+
 ## License
 
 [MIT](./LICENSE)
