@@ -104,7 +104,8 @@ check('服务不响应 -> 超时 fail-closed，且不悬挂', async () => {
     const t0 = Date.now()
     const r = await d.choose({ candidates, items, history: [] })
     const dt = Date.now() - t0
-    assert.strictEqual(r.reason, 'error')
+    // 超时单独一个 reason：和「fetch 直接失败」分开，排障时才知道该看哪一头。
+    assert.strictEqual(r.reason, 'timeout')
     assert.ok(dt < 1200, `超时应在 200ms 量级返回，实际 ${dt}ms`)
   })
 })
