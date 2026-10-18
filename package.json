@@ -1,6 +1,6 @@
 {
   "name": "dsh-groupchat",
-  "version": "0.6.6-fy.3",
+  "version": "0.6.6-fy.4",
   "private": true,
   "type": "module",
   "description": "给每个工程一个群聊：运行中的 AI 会话与人自动同群，@ 可唤醒离线会话、@创建成员 可新建成员。",
@@ -8,6 +8,7 @@
   "main": "lib/index.js",
   "exports": {
     ".": "./lib/index.js",
+    "./wake-decider": "./lib/wake-decider.js",
     "./client": "./lib/client.js",
     "./cordis.patch.yml": "./cordis.patch.yml",
     "./locale/*.json": "./locale/*.json",
@@ -18,6 +19,7 @@
     "locale/*.json",
     "cordis.patch.yml",
     "lib/index.js",
+    "lib/wake-decider.js",
     "lib/client.js"
   ],
   "dsh": {
